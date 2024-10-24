@@ -1,6 +1,8 @@
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.styles import Border, Side
+from tkinter import Tk, filedialog
+import os
+import sys  # Importamos sys para poder salir del programa
 
 def procesar_fichajes(archivo_txt, archivo_excel):
     # Lista para almacenar los datos
@@ -13,10 +15,10 @@ def procesar_fichajes(archivo_txt, archivo_excel):
             partes = linea.strip().split()
             if len(partes) >= 4:
                 # Extraer la información y recortar espacios innecesarios
-                fecha = partes[0].strip()  # Recortar espacios en la fecha
+                fecha = partes[0].strip()
                 hora = partes[1].strip()
                 accion = partes[2].strip()
-                lugar = partes[3].strip()  # Recortar espacios en el lugar
+                lugar = partes[3].strip()
                 # Agregar los datos a la lista
                 datos.append([fecha, hora, accion, lugar])
 
@@ -24,8 +26,10 @@ def procesar_fichajes(archivo_txt, archivo_excel):
     df = pd.DataFrame(datos, columns=['fecha', 'hora', 'acción', 'lugar'])
 
     # Ordenar el DataFrame por la columna 'fecha' y 'hora'
-    df['fecha'] = pd.to_datetime(df['fecha'], format='%d/%m/%Y') 
-    df = df.sort_values(by=['fecha', 'hora'])
+    df['fecha'] = pd.to_datetime(df['fecha'] + ' ' + df['hora'], format='%d/%m/%Y %H:%M:%S')
+    df = df.sort_values(by='fecha')
+    # Eliminar duplicados (si los hay)
+    df = df.drop_duplicates() 
 
     # Convertir las fechas al formato correcto para visualización en Excel
     df['fecha'] = df['fecha'].dt.strftime('%d/%m/%Y')
@@ -37,37 +41,20 @@ def procesar_fichajes(archivo_txt, archivo_excel):
     df.to_excel(archivo_excel, index=False, sheet_name='Registros')
 
     # Calcular horas trabajadas por día
-    calcular_horas_trabajadas(df, archivo_excel)
+    calcular_horas_por_dia(df, archivo_excel)
 
     # Calcular horas trabajadas por mes
-    calcular_estadisticas_por_mes(archivo_excel)
+    calcular_estadisticas_por_mes(df, archivo_excel)
 
+    # Reiniciar el índice para evitar problemas con las filas insertadas
+    df = df.reset_index(drop=True)  
     # Agregar líneas separadoras cuando cambia la fecha
-    wb = load_workbook(archivo_excel)
-    ws = wb['Registros']
-
-    # Definir el estilo de la línea gruesa
-    border = Border(top=Side(border_style='thick'))
-
-    # Comenzar desde la fila 2, ya que la 1 es el encabezado
-    fila_inicio = 2
-    fecha_anterior = None
-
-    for i in range(fila_inicio, len(df) + fila_inicio):
-        fecha_actual = ws.cell(row=i, column=1).value  # Obtener la fecha de la columna 1
-        if fecha_actual != fecha_anterior:
-            if fecha_anterior is not None:  # Si no es la primera fecha, inserta la línea
-                ws.insert_rows(i)
-                for col in range(1, len(df.columns) + 1):  # Aplica el borde a cada columna de la fila insertada
-                    ws.cell(row=i, column=col).border = border
-                fila_inicio += 1  # Aumentar fila de inicio ya que se insertó una nueva fila
-        fecha_anterior = fecha_actual  # Actualizar la fecha anterior
-
-    # Guardar el archivo Excel con las líneas separadoras
-    wb.save(archivo_excel)
+    agregar_lineas_separadoras(df, archivo_excel)
+    
+    print(f"Proceso completado. Los resultados se guardaron en '{archivo_excel}'.")
 
 
-def calcular_horas_trabajadas(df, archivo_excel):
+def calcular_horas_por_dia(df, archivo_excel):
     # Diccionario para almacenar las horas trabajadas por fecha
     horas_trabajadas = {}
 
@@ -109,9 +96,28 @@ def calcular_horas_trabajadas(df, archivo_excel):
     with pd.ExcelWriter(archivo_excel, engine='openpyxl', mode='a') as writer:
         total_horas_df.to_excel(writer, index=False, sheet_name='Estadísticas por Día')
 
-def calcular_estadisticas_por_mes(archivo_excel):
-    # Leer el DataFrame de totales
-    total_horas_df = pd.read_excel(archivo_excel, sheet_name='Estadísticas por Día')
+
+def calcular_estadisticas_por_mes(df, archivo_excel):
+    # Primero, calculamos las horas trabajadas por día como un DataFrame intermedio
+    total_horas_df = pd.DataFrame(columns=['Fecha', 'Total horas'])
+    
+    entrada = None
+    horas_trabajadas = {}
+    
+    for index, row in df.iterrows():
+        fecha = row['Fecha']
+        hora = row['Hora']
+        accion = row['Acción']
+        datetime_actual = pd.to_datetime(fecha + ' ' + hora, format='%d/%m/%Y %H:%M:%S')
+
+        if accion == "Entrada":
+            entrada = datetime_actual
+        elif accion == "Salida" and entrada is not None:
+            tiempo_trabajado = datetime_actual - entrada
+            horas_trabajadas[fecha] = horas_trabajadas.get(fecha, pd.Timedelta(0)) + tiempo_trabajado
+            entrada = None
+
+    total_horas_df = pd.DataFrame(horas_trabajadas.items(), columns=['Fecha', 'Total horas'])
 
     # Convertir la columna 'Fecha' a datetime
     total_horas_df['Fecha'] = pd.to_datetime(total_horas_df['Fecha'], format='%d/%m/%Y')
@@ -152,11 +158,63 @@ def calcular_estadisticas_por_mes(archivo_excel):
     with pd.ExcelWriter(archivo_excel, engine='openpyxl', mode='a') as writer:
         estadisticas.to_excel(writer, index=False, sheet_name='Estadísticas por Mes')
 
-# Ruta del archivo de texto de entrada y del archivo de Excel de salida
-archivo_txt = 'fichajes.txt'  # Cambia esto al nombre de tu archivo de texto
-archivo_excel = 'fichajes.xlsx'  # Nombre del archivo de salida
 
-# Procesar el archivo
-procesar_fichajes(archivo_txt, archivo_excel)
+def agregar_lineas_separadoras(df, archivo_excel):
+    from openpyxl.styles import Border, Side
+    from openpyxl import load_workbook
 
-print(f'Los datos se han procesado y guardado en {archivo_excel}')
+    # Abrir el archivo Excel
+    wb = load_workbook(archivo_excel)
+    ws = wb['Registros']
+
+    # Definir el estilo de la línea gruesa
+    border = Border(top=Side(border_style='thick'))
+
+    # Comenzar desde la fila 2, ya que la 1 es el encabezado
+    fila_inicio = 2
+    fecha_anterior = None
+    for i in range(fila_inicio, len(df) + fila_inicio):
+        fecha_actual = ws.cell(row=i, column=1).value  # Obtener la fecha de la columna 1
+        if fecha_actual != fecha_anterior:
+            if fecha_anterior is not None:  # Si no es la primera fecha, inserta la línea
+                for col in range(1, len(df.columns) + 1):  # Aplica el borde a cada columna de la fila insertada
+                    ws.cell(row=i, column=col).border = border
+        fecha_anterior = fecha_actual
+
+    # Guardar los cambios en el archivo Excel
+    wb.save(archivo_excel)
+
+
+if __name__ == "__main__":
+    # Ocultar la ventana de Tkinter
+    root = Tk()
+    root.withdraw()
+
+    # Abrir cuadro de diálogo para seleccionar el archivo de texto
+    archivo_txt = filedialog.askopenfilename(
+        title="Seleccione el archivo de texto",
+        filetypes=[("Archivos de texto", "*.txt")]
+    )
+
+    # Verificar si se seleccionó un archivo
+    if not archivo_txt:
+        print("No se seleccionó ningún archivo. Saliendo del programa.")
+        sys.exit()
+
+    # Solicitar el nombre del archivo Excel desde la consola
+    nombre_excel = input("Ingrese el nombre del archivo Excel (sin extensión): ")
+
+    # Verificar si se ingresó un nombre
+    if not nombre_excel:
+        print("No se ingresó ningún nombre para el archivo Excel. Saliendo del programa.")
+        sys.exit()
+
+    # Crear la ruta para guardar el archivo Excel
+    carpeta_resultados = "resultados"
+    if not os.path.exists(carpeta_resultados):
+        os.makedirs(carpeta_resultados)
+    
+    archivo_excel = os.path.join(carpeta_resultados, f"{nombre_excel}.xlsx")
+
+    # Ejecutar la función principal
+    procesar_fichajes(archivo_txt, archivo_excel)
