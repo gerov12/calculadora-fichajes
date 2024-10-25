@@ -11,6 +11,7 @@ def procesar_fichajes(archivo_txt, archivo_excel):
     # Leer el archivo de texto
     with open(archivo_txt, 'r') as file:
         for linea in file:
+            linea = linea.encode('ascii', 'ignore').decode()  # Elimina caracteres no ASCII como "Â"
             # Separar la línea en partes usando split sin argumentos
             partes = linea.strip().split()
             if len(partes) >= 4:
