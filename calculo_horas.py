@@ -187,15 +187,32 @@ def agregar_lineas_separadoras(df, archivo_excel):
 
 
 if __name__ == "__main__":
+    # Mostrar el mensaje inicial
+    print(
+        "1- Ingrese a http://gestionrrhh.indec.gob.ar:9090/sse_generico/generico_login.jsp\n"
+        "2- Busque los fichajes de interés\n"
+        "3- Copie los datos de la tabla resultante y péguelos en un archivo de texto "
+        "(si hay varias páginas simplemente pegar los datos unos debajo de los otros)\n"
+        "4- Una vez tenga el archivo de texto presione ENTER para proceder a seleccionar el dicho archivo y comenzar el calculo de sus horas.\n\n"
+        "Presione ENTER para continuar..."
+    )
+
+    # Esperar que el usuario presione ENTER para continuar
+    input()
+
     # Ocultar la ventana de Tkinter
     root = Tk()
     root.withdraw()
+    root.call('wm', 'attributes', '.', '-topmost', '1')  # Llevar al frente
 
     # Abrir cuadro de diálogo para seleccionar el archivo de texto
     archivo_txt = filedialog.askopenfilename(
         title="Seleccione el archivo de texto",
         filetypes=[("Archivos de texto", "*.txt")]
     )
+
+    # Cerrar la ventana de Tkinter después de seleccionar el archivo
+    root.destroy()
 
     # Verificar si se seleccionó un archivo
     if not archivo_txt:
